@@ -1,0 +1,30 @@
+[package]
+name = "async-dns-tls"
+version = "0.1.0"
+edition = "2021"
+authors = [ "Nathan ROYER <nathan.royer.pro@gmail.com>" ]
+description = "DNS-over-TLS client using futures-rustls"
+license = "MIT"
+keywords = [ "async", "rustls", "dot", "dns", "tls" ]
+repository = "https://github.com/NathanRoyer/async-dns-tls"
+categories = [ "network-programming" ]
+
+[[example]]
+name = "demo"
+
+[dependencies]
+futures-rustls = { version = "0.26", default-features = false }
+rustls = { version = "0.23", default-features = false }
+ahash = { version = "0.8", default-features = false }
+futures-lite = "2.6"
+async-net = "2.0"
+litemap = "0.8"
+
+[dev-dependencies]
+webpki-roots = "1.0"
+
+[build-dependencies]
+rand = "0.8"
+
+[features]
+default = [ "rustls/aws-lc-rs" ]
