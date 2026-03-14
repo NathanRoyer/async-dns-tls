@@ -26,6 +26,7 @@ type Getter<T> = fn(&mut CacheValue) -> &mut Option<Records<T>>;
 const LEN_PREFIX: usize = 2;
 const MAX_LEN: usize = u16::MAX as usize;
 const SAFE_LEN: usize = 16384;
+const HEADER_LEN: usize = 0xC;
 const DOT_PORT: u16 = 853;
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -272,7 +273,7 @@ impl Resolver {
         self.buffer[0xc] = 1; // additional count
         self.buffer[0xd] = 0; // = 0
 
-        let mut i = 0xe;
+        let mut i = LEN_PREFIX + HEADER_LEN;
 
         // QUESTION
 
@@ -296,8 +297,8 @@ impl Resolver {
         self.buffer[i + 3] = 1; // qclass = INTERNET (low bits)
         i += 4;
 
-        self.req_len = i - LEN_PREFIX;
-        self.encode_len(self.req_len)
+        self.req_len = i;
+        self.encode_len(i - LEN_PREFIX)
     }
 
     async fn request(&mut self, name: &str, resource_type: ResourceType) -> Result<(), Error> {
@@ -308,7 +309,7 @@ impl Resolver {
             old_connection = false;
         }
 
-        let packet = &self.buffer[..self.req_len + LEN_PREFIX];
+        let packet = &self.buffer[..self.req_len];
         let stream = self.stream.as_mut().expect("see self.connect()");
 
         let Ok(_) = stream.write_all(packet).await else {
@@ -348,6 +349,10 @@ impl Resolver {
         let expected = LEN_PREFIX + self.decode_len();
         let response = &self.buffer[LEN_PREFIX..expected];
 
+        if response.len() < HEADER_LEN {
+            return Err(Error::Decoding);
+        }
+
         let a = self.buffer[0x6];
         let b = self.buffer[0x7];
         let question_count = u16::from_be_bytes([a, b]);
@@ -369,7 +374,12 @@ impl Resolver {
         let handle = &mut self.cache[&key];
         let records = getter(handle);
 
-        let mut i = self.req_len;
+        // point to start of question
+        let mut i = HEADER_LEN;
+
+        // skip question (name, qtype, qclass)
+        let _name: Sink = name_at(response, &mut i).ok_or(Error::Decoding)?;
+        i += 4;
 
         let mut items = Vec::new();
         let mut min_ttl = 24 * 3600;
