@@ -358,24 +358,34 @@ impl Resolver {
         let handle = &mut self.cache[&key];
         let records = getter(handle);
 
-        // skip question
-        let _ = reader.read_question().ok_or(Error::Decoding)?;
+        let question = reader.read_question().ok_or(Error::Decoding)?;
+        let qtype = question.qtype;
 
         let mut items = Vec::new();
         let mut min_ttl = 24 * 3600;
-
-        if answer_count == 0 {
-            min_ttl = 0;
-        };
+        let mut unsolicited = 0;
 
         for _ in 0..answer_count {
             let answer = reader.read_resource().ok_or(Error::Decoding)?;
-            min_ttl = min_ttl.min(answer.time_to_live as u64);
+            let ttl = answer.time_to_live as u64;
             let len = answer.data_len as usize;
+
+            // skip unrelated answers... why are they a thing
+            if answer.qtype != qtype {
+                let _ = reader.read(len).ok_or(Error::Decoding)?;
+                unsolicited += 1;
+                continue;
+            }
 
             let result = data_proc(&mut reader, len);
             items.push(result.ok_or(Error::Decoding)?);
+            min_ttl = min_ttl.min(ttl);
         }
+
+        // if there were no actual answers
+        if answer_count == unsolicited {
+            min_ttl = 0;
+        };
 
         let min_ttl = Duration::from_secs(min_ttl.into());
         let expiration = Instant::now() + min_ttl;
